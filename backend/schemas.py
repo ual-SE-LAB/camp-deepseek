@@ -2,7 +2,7 @@ from pydantic import BaseModel, EmailStr, Field, validator
 from datetime import date, datetime
 from typing import Optional, List
 
-# User schemas
+# --- User schemas ---
 class UserBase(BaseModel):
     email: EmailStr
     full_name: str
@@ -13,6 +13,7 @@ class UserCreate(UserBase):
     role: str = "parent"
 
 class UserLogin(BaseModel):
+    # Esto debe coincidir con el JSON que envía tu auth.js
     email: EmailStr
     password: str
 
@@ -33,7 +34,7 @@ class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
 
-# Emergency Contact schemas
+# --- Emergency Contact schemas ---
 class EmergencyContactBase(BaseModel):
     full_name: str
     relationship: str
@@ -53,7 +54,7 @@ class EmergencyContactResponse(EmergencyContactBase):
     class Config:
         from_attributes = True
 
-# Camper schemas
+# --- Camper schemas ---
 class CamperBase(BaseModel):
     first_name: str
     last_name: str
@@ -109,14 +110,14 @@ class CamperResponse(CamperBase):
     id: int
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: Optional[datetime] = None # Corregido: añadido = None
     emergency_contacts: List[EmergencyContactResponse] = []
     parent_ids: List[int] = []
     
     class Config:
         from_attributes = True
 
-# Parent-Camper association
+# --- Parent-Camper association ---
 class ParentCamperCreate(BaseModel):
     parent_id: int
     camper_id: int

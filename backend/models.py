@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Text, Date, Table
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship as db_relationship  # <-- ALIAS AÑADIDO AQUÍ
 from sqlalchemy.sql import func
 from database import Base
 
@@ -28,7 +28,7 @@ class User(Base):
     updated_at = Column(DateTime, onupdate=func.now())
     
     # Relationships
-    campers = relationship("Camper", secondary=parent_camper, back_populates="parents")
+    campers = db_relationship("Camper", secondary=parent_camper, back_populates="parents")
 
 class Camper(Base):
     __tablename__ = "campers"
@@ -52,8 +52,8 @@ class Camper(Base):
     updated_at = Column(DateTime, onupdate=func.now())
     
     # Relationships
-    parents = relationship("User", secondary=parent_camper, back_populates="campers")
-    emergency_contacts = relationship("EmergencyContact", back_populates="camper", cascade="all, delete-orphan")
+    parents = db_relationship("User", secondary=parent_camper, back_populates="campers")
+    emergency_contacts = db_relationship("EmergencyContact", back_populates="camper", cascade="all, delete-orphan")
 
 class EmergencyContact(Base):
     __tablename__ = "emergency_contacts"
@@ -61,20 +61,12 @@ class EmergencyContact(Base):
     id = Column(Integer, primary_key=True, index=True)
     camper_id = Column(Integer, ForeignKey("campers.id", ondelete="CASCADE"), nullable=False)
     full_name = Column(String(255), nullable=False)
-    
-    # CHANGE: 
-    contact_relationship = Column("relationship", String(50), nullable=False)
-    
+    relationship = Column(String(50), nullable=False)
     phone_number = Column(String(20), nullable=False)
     alternate_phone = Column(String(20))
     email = Column(String(255))
     is_primary = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     
-    # Relationships
-    camper = relationship("Camper", back_populates="emergency_contacts")
-
-    # #CHANGE:
-    @property
-    def relationship(self):
-        return self.contact_relationship
+    # Relationships (usando el alias)
+    camper = db_relationship("Camper", back_populates="emergency_contacts")

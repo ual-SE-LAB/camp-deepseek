@@ -28,24 +28,18 @@ def add_camper(
     """Parent: Add a new camper and link to my account"""
     if current_user.role != "parent":
         raise HTTPException(status_code=403, detail="Only parents can add campers")
-
-    # Create camper
-    db_camper = models.Camper(**camper_data.dict(exclude={'emergency_contacts'}))
+    
+    # Create camper (excluyendo contactos de emergencia para el objeto principal)
+    camper_dict = camper_data.dict(exclude={'emergency_contacts'})
+    db_camper = models.Camper(**camper_dict)
     db.add(db_camper)
-    db.flush()
-
+    db.flush() # Genera el ID del camper
+    
     # Add emergency contacts
     for contact_data in camper_data.emergency_contacts:
-        c_dict = contact_data.dict()
-        # CHANGE: Se mapea 'relationship' del esquema a 'contact_relationship' del modelo
         db_contact = models.EmergencyContact(
-            camper_id=db_camper.id,
-            full_name=c_dict.get("full_name"),
-            contact_relationship=c_dict.get("relationship"),
-            phone_number=c_dict.get("phone_number"),
-            alternate_phone=c_dict.get("alternate_phone"),
-            email=c_dict.get("email"),
-            is_primary=c_dict.get("is_primary")
+            **contact_data.dict(), 
+            camper_id=db_camper.id
         )
         db.add(db_contact)
     

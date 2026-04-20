@@ -35,7 +35,7 @@ def create_camper(
 ):
     """
     Create a new camper.
-    - Admin: Can create camper without linking to parent
+    - Admin: Can create camper without linking to parent (must link separately)
     - Parent: Creates camper and automatically links to themselves
     """
     # Validate emergency contacts
@@ -63,15 +63,14 @@ def create_camper(
         notes=camper_data.notes
     )
     db.add(db_camper)
-    db.flush() 
+    db.flush()  # Get the camper ID without committing
     
     # Add emergency contacts
     for contact_data in camper_data.emergency_contacts:
-        # CHANGE: Mapeo de relationship a contact_relationship
         db_contact = models.EmergencyContact(
             camper_id=db_camper.id,
             full_name=contact_data.full_name,
-            contact_relationship=contact_data.relationship,
+            relationship=contact_data.relationship,
             phone_number=contact_data.phone_number,
             alternate_phone=contact_data.alternate_phone,
             email=contact_data.email,
@@ -100,11 +99,18 @@ def get_camper(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Get a specific camper by ID.
+    - Admin: Can access any camper
+    - Parent: Can only access their own campers
+    """
     camper = db.query(models.Camper).filter(models.Camper.id == camper_id).first()
     if not camper:
         raise HTTPException(status_code=404, detail="Camper not found")
     
+    # Check permissions
     if current_user.role != "admin":
+        # Verify camper belongs to this parent
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,
             models.parent_camper.c.camper_id == camper_id
@@ -121,11 +127,18 @@ def update_camper(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Update a camper's information.
+    - Admin: Can update any camper
+    - Parent: Can only update their own campers
+    """
     camper = db.query(models.Camper).filter(models.Camper.id == camper_id).first()
     if not camper:
         raise HTTPException(status_code=404, detail="Camper not found")
     
+    # Check permissions
     if current_user.role != "admin":
+        # Verify camper belongs to this parent
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,
             models.parent_camper.c.camper_id == camper_id
@@ -133,6 +146,7 @@ def update_camper(
         if not is_my_camper:
             raise HTTPException(status_code=403, detail="Not enough permissions")
     
+    # Update camper fields
     for key, value in camper_data.dict(exclude_unset=True).items():
         setattr(camper, key, value)
     
@@ -146,15 +160,23 @@ def delete_camper(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Delete a camper.
+    - Admin: Can permanently delete any camper
+    - Parent: Can only soft-delete (deactivate) their own campers
+    """
     camper = db.query(models.Camper).filter(models.Camper.id == camper_id).first()
     if not camper:
         raise HTTPException(status_code=404, detail="Camper not found")
     
     if current_user.role == "admin":
+        # Admin can permanently delete
         db.delete(camper)
         db.commit()
         return {"message": "Camper permanently deleted"}
     else:
+        # Parents can only soft delete
+        # Verify camper belongs to this parent
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,
             models.parent_camper.c.camper_id == camper_id
@@ -173,10 +195,16 @@ def add_emergency_contact(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Add an emergency contact to a camper.
+    - Admin: Can add to any camper
+    - Parent: Can only add to their own campers
+    """
     camper = db.query(models.Camper).filter(models.Camper.id == camper_id).first()
     if not camper:
         raise HTTPException(status_code=404, detail="Camper not found")
     
+    # Check permissions
     if current_user.role != "admin":
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,
@@ -185,21 +213,17 @@ def add_emergency_contact(
         if not is_my_camper:
             raise HTTPException(status_code=403, detail="Not enough permissions")
     
+    # If this contact is primary, unset any existing primary contacts
     if contact_data.is_primary:
         db.query(models.EmergencyContact).filter(
             models.EmergencyContact.camper_id == camper_id,
             models.EmergencyContact.is_primary == True
         ).update({"is_primary": False})
     
-    # CHANGE: Constructor manual para evitar el error de keyword 'relationship'
+    # Create new contact
     db_contact = models.EmergencyContact(
         camper_id=camper_id,
-        full_name=contact_data.full_name,
-        contact_relationship=contact_data.relationship,
-        phone_number=contact_data.phone_number,
-        alternate_phone=contact_data.alternate_phone,
-        email=contact_data.email,
-        is_primary=contact_data.is_primary
+        **contact_data.dict()
     )
     db.add(db_contact)
     db.commit()
@@ -213,11 +237,21 @@ def update_emergency_contact(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    contact = db.query(models.EmergencyContact).filter(models.EmergencyContact.id == contact_id).first()
+    """
+    Update an emergency contact.
+    - Admin: Can update any contact
+    - Parent: Can only update contacts for their own campers
+    """
+    contact = db.query(models.EmergencyContact).filter(
+        models.EmergencyContact.id == contact_id
+    ).first()
+    
     if not contact:
         raise HTTPException(status_code=404, detail="Emergency contact not found")
     
+    # Check permissions
     if current_user.role != "admin":
+        # Verify camper belongs to this parent
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,
             models.parent_camper.c.camper_id == contact.camper_id
@@ -225,19 +259,16 @@ def update_emergency_contact(
         if not is_my_camper:
             raise HTTPException(status_code=403, detail="Not enough permissions")
     
+    # If this contact is being set as primary, unset other primary contacts
     if contact_data.is_primary and not contact.is_primary:
         db.query(models.EmergencyContact).filter(
             models.EmergencyContact.camper_id == contact.camper_id,
             models.EmergencyContact.is_primary == True
         ).update({"is_primary": False})
     
-    # CHANGE: Mapeo manual de campos para asegurar contact_relationship
-    contact.full_name = contact_data.full_name
-    contact.contact_relationship = contact_data.relationship
-    contact.phone_number = contact_data.phone_number
-    contact.alternate_phone = contact_data.alternate_phone
-    contact.email = contact_data.email
-    contact.is_primary = contact_data.is_primary
+    # Update contact
+    for key, value in contact_data.dict().items():
+        setattr(contact, key, value)
     
     db.commit()
     db.refresh(contact)
@@ -249,11 +280,21 @@ def delete_emergency_contact(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    contact = db.query(models.EmergencyContact).filter(models.EmergencyContact.id == contact_id).first()
+    """
+    Delete an emergency contact.
+    - Admin: Can delete any contact
+    - Parent: Can only delete contacts for their own campers
+    """
+    contact = db.query(models.EmergencyContact).filter(
+        models.EmergencyContact.id == contact_id
+    ).first()
+    
     if not contact:
         raise HTTPException(status_code=404, detail="Emergency contact not found")
     
+    # Check permissions
     if current_user.role != "admin":
+        # Verify camper belongs to this parent
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,
             models.parent_camper.c.camper_id == contact.camper_id
@@ -261,13 +302,18 @@ def delete_emergency_contact(
         if not is_my_camper:
             raise HTTPException(status_code=403, detail="Not enough permissions")
     
+    # Don't allow deleting the only primary contact
     if contact.is_primary:
         primary_count = db.query(models.EmergencyContact).filter(
             models.EmergencyContact.camper_id == contact.camper_id,
             models.EmergencyContact.is_primary == True
         ).count()
+        
         if primary_count <= 1:
-            raise HTTPException(status_code=400, detail="Cannot delete the only primary contact")
+            raise HTTPException(
+                status_code=400, 
+                detail="Cannot delete the only primary emergency contact"
+            )
     
     db.delete(contact)
     db.commit()
@@ -282,30 +328,45 @@ def link_camper_to_parent(
     current_user: models.User = Depends(auth.require_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Link a camper to a parent (Admin only).
+    """
+    # Verify camper exists
     camper = db.query(models.Camper).filter(models.Camper.id == camper_id).first()
     if not camper:
         raise HTTPException(status_code=404, detail="Camper not found")
     
-    parent = db.query(models.User).filter(models.User.id == parent_id, models.User.role == "parent").first()
+    # Verify parent exists
+    parent = db.query(models.User).filter(
+        models.User.id == parent_id,
+        models.User.role == "parent"
+    ).first()
     if not parent:
         raise HTTPException(status_code=404, detail="Parent not found")
     
-    existing = db.execute(models.parent_camper.select().where(
-        models.parent_camper.c.parent_id == parent_id,
-        models.parent_camper.c.camper_id == camper_id
-    )).first()
+    # Check if link already exists
+    existing = db.execute(
+        models.parent_camper.select().where(
+            models.parent_camper.c.parent_id == parent_id,
+            models.parent_camper.c.camper_id == camper_id
+        )
+    ).first()
     
     if existing:
         raise HTTPException(status_code=400, detail="Link already exists")
     
-    db.execute(models.parent_camper.insert().values(
-        parent_id=parent_id,
-        camper_id=camper_id,
-        relationship=relationship,
-        is_primary=is_primary
-    ))
+    # Create link
+    db.execute(
+        models.parent_camper.insert().values(
+            parent_id=parent_id,
+            camper_id=camper_id,
+            relationship=relationship,
+            is_primary=is_primary
+        )
+    )
     db.commit()
-    return {"message": "Camper linked successfully"}
+    
+    return {"message": "Camper linked to parent successfully"}
 
 @router.delete("/{camper_id}/unlink-parent/{parent_id}")
 def unlink_camper_from_parent(
@@ -314,20 +375,30 @@ def unlink_camper_from_parent(
     current_user: models.User = Depends(auth.require_admin),
     db: Session = Depends(get_db)
 ):
-    existing = db.execute(models.parent_camper.select().where(
-        models.parent_camper.c.parent_id == parent_id,
-        models.parent_camper.c.camper_id == camper_id
-    )).first()
+    """
+    Unlink a camper from a parent (Admin only).
+    """
+    # Check if link exists
+    existing = db.execute(
+        models.parent_camper.select().where(
+            models.parent_camper.c.parent_id == parent_id,
+            models.parent_camper.c.camper_id == camper_id
+        )
+    ).first()
     
     if not existing:
         raise HTTPException(status_code=404, detail="Link not found")
     
-    db.execute(models.parent_camper.delete().where(
-        models.parent_camper.c.parent_id == parent_id,
-        models.parent_camper.c.camper_id == camper_id
-    ))
+    # Delete link
+    db.execute(
+        models.parent_camper.delete().where(
+            models.parent_camper.c.parent_id == parent_id,
+            models.parent_camper.c.camper_id == camper_id
+        )
+    )
     db.commit()
-    return {"message": "Camper unlinked successfully"}
+    
+    return {"message": "Camper unlinked from parent successfully"}
 
 @router.get("/{camper_id}/parents", response_model=List[schemas.UserResponse])
 def get_camper_parents(
@@ -335,10 +406,16 @@ def get_camper_parents(
     current_user: models.User = Depends(auth.get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Get all parents linked to a camper.
+    - Admin: Can access any camper
+    - Parent: Can only access their own campers
+    """
     camper = db.query(models.Camper).filter(models.Camper.id == camper_id).first()
     if not camper:
         raise HTTPException(status_code=404, detail="Camper not found")
     
+    # Check permissions
     if current_user.role != "admin":
         is_my_camper = db.query(models.parent_camper).filter(
             models.parent_camper.c.parent_id == current_user.id,

@@ -200,4 +200,3 @@ def link_camper_to_parent(
     db.commit()
     
     return {"message": "Camper linked to parent successfully"}
-    
