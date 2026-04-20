@@ -12,7 +12,7 @@ app = FastAPI(title="Camp Management System API", version="1.0.0")
 # Configuración de CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Durante desarrollo es más seguro usar "*" si hay líos de puertos
+    allow_origins=["http://localhost", "http://localhost:80"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
